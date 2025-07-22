@@ -1,0 +1,176 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: youtube_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: youtube
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - youtube_network
+
+  # Redis for job queue and caching
+  redis:
+    image: redis:7.0-alpine
+    container_name: youtube_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - youtube_network
+
+  # MinIO for object storage
+  minio:
+    image: minio/minio:latest
+    container_name: youtube_minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - youtube_network
+
+  # MinIO bucket initialization
+  minio-init:
+    image: minio/mc:latest
+    container_name: youtube_minio_init
+    depends_on:
+      - minio
+    volumes:
+      - ./scripts/init-minio.sh:/init-minio.sh
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc mb myminio/videos --ignore-existing;
+      mc mb myminio/thumbnails --ignore-existing;
+      mc anonymous set public myminio/videos/processed/;
+      mc anonymous set public myminio/videos/thumbnails/;
+      mc anonymous set public myminio/thumbnails/;
+      echo 'MinIO buckets initialized';
+      "
+    networks:
+      - youtube_network
+
+  # Go Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: youtube_backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/youtube?authSource=admin
+      - REDIS_URI=redis://redis:6379
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_USE_SSL=false
+      - FRONTEND_URL=http://localhost:3000
+    depends_on:
+      - mongodb
+      - redis
+      - minio
+      - minio-init
+    volumes:
+      - ./backend:/app
+    networks:
+      - youtube_network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: youtube_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - youtube_network
+
+  # Video Processing Worker 1
+  worker1:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: youtube_worker1
+    restart: unless-stopped
+    environment:
+      - WORKER_ID=worker1
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/youtube?authSource=admin
+      - REDIS_URI=redis://redis:6379
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_USE_SSL=false
+    depends_on:
+      - mongodb
+      - redis
+      - minio
+      - minio-init
+    volumes:
+      - ./worker:/app
+    networks:
+      - youtube_network
+
+  # Video Processing Worker 2
+  worker2:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: youtube_worker2
+    restart: unless-stopped
+    environment:
+      - WORKER_ID=worker2
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/youtube?authSource=admin
+      - REDIS_URI=redis://redis:6379
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_USE_SSL=false
+    depends_on:
+      - mongodb
+      - redis
+      - minio
+      - minio-init
+    volumes:
+      - ./worker:/app
+    networks:
+      - youtube_network
+
+volumes:
+  mongodb_data:
+  redis_data:
+  minio_data:
+
+networks:
+  youtube_network:
+    driver: bridge 

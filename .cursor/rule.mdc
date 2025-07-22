@@ -1,0 +1,20 @@
+---
+alwaysApply: true
+---
+Rules:
+- Use only English in code and comments
+- Use DDD approach for Golang part of API
+- Make proper UI design
+
+Video Processing & Sharing Platform
+🧩 Components:
+Frontend: React upload & video viewer
+Backend API: Go (handles upload, metadata)
+MongoDB: Video metadata, user data
+Redis: Job queue for video processing
+Worker(s):
+Transcode videos to multiple formats (simulate FFmpeg)
+Generate thumbnails
+MinIO/S3: Video file storage (can be local via container)
+🚀 Features:
+Parallel video processing workers
