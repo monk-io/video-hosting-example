@@ -1,48 +1,40 @@
-# Development stage
-FROM node:18-alpine AS development
-
-# Set working directory
+# Build stage
+FROM node:20-alpine AS build
 WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm install
-
-# Copy source code
-COPY . .
-
-# Expose port
-EXPOSE 3000
-
-# Start development server
-CMD ["npm", "start"]
-
-# Production build stage
-FROM node:18-alpine AS build
-
-WORKDIR /app
-
-# Copy package files and install dependencies
-COPY package*.json ./
-RUN npm ci --only=production
-
-# Copy source code and build
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine AS production
-
-# Copy built app to nginx
+# Production stage: serve with nginx
+FROM nginx:alpine
 COPY --from=build /app/build /usr/share/nginx/html
+# Provide nginx config inline (fix try_files directive)
+RUN cat <<EOF > /etc/nginx/nginx.conf
+worker_processes 1;
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+error_log  /var/log/nginx/error.log warn;
+pid        /var/run/nginx.pid;
 
-# Expose port
-EXPOSE 80
+events {
+    worker_connections  1024;
+}
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"] 
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+    sendfile        on;
+    keepalive_timeout  65;
+    server {
+        listen 3000;
+        server_name localhost;
+        root /usr/share/nginx/html;
+        index index.html;
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+}
+EOF
+EXPOSE 3000
+CMD ["nginx", "-g", "daemon off;"]

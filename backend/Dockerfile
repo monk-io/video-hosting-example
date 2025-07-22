@@ -1,5 +1,4 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23.2-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -30,8 +29,8 @@ WORKDIR /root/
 # Copy the binary from builder stage
 COPY --from=builder /app/main .
 
-# Expose port
+# Expose the backend port
 EXPOSE 8080
 
-# Run the application
-CMD ["./main"] 
+# Command to run
+CMD ["./main"]
