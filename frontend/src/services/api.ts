@@ -9,7 +9,33 @@ import {
   ApiError
 } from '../types/video';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+// Declare window.ENV type
+declare global {
+  interface Window {
+    ENV?: {
+      REACT_APP_API_URL?: string;
+      REACT_APP_MINIO_URL?: string;
+    };
+  }
+}
+
+// Get configuration from runtime config or environment variables
+const getConfig = () => {
+  const runtimeConfig = window.ENV || {};
+  return {
+    apiUrl: runtimeConfig.REACT_APP_API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8080',
+    minioUrl: runtimeConfig.REACT_APP_MINIO_URL || process.env.REACT_APP_MINIO_URL || 'http://localhost:9000'
+  };
+};
+
+const config = getConfig();
+const API_BASE_URL = config.apiUrl;
+
+console.log('API Configuration:', {
+  API_BASE_URL,
+  MINIO_URL: config.minioUrl,
+  source: window.ENV ? 'runtime' : 'environment'
+});
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -106,7 +132,8 @@ export class VideoAPI {
   // Get thumbnail URL
   static getThumbnailUrl(thumbnailPath: string): string {
     // Use MinIO URL if available, otherwise use backend API
-    const minioUrl = process.env.REACT_APP_MINIO_URL || `${API_BASE_URL.replace(':8080', ':9000')}`;
+    const currentConfig = getConfig();
+    const minioUrl = currentConfig.minioUrl || `${API_BASE_URL.replace(':8080', ':9000')}`;
     return `${minioUrl}/videos/thumbnails/${thumbnailPath}`;
   }
 
