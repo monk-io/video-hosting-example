@@ -226,7 +226,7 @@ func (vp *VideoProcessor) GenerateThumbnail(ctx context.Context, videoID, jobID 
 	// Define paths
 	inputPath := "videos/original/" + videoID + ext
 	thumbnailFilename := videoID + "_thumb.jpg"
-	thumbnailPath := "thumbnails/" + thumbnailFilename
+	// Note: thumbnailFilename is used directly as object name in thumbnails bucket
 
 	// Local temporary file paths
 	localInputPath := filepath.Join(vp.tempDir, "thumb_input_"+videoID+ext)
@@ -296,7 +296,7 @@ func (vp *VideoProcessor) GenerateThumbnail(ctx context.Context, videoID, jobID 
 		return fmt.Errorf("failed to get thumbnail info: %w", err)
 	}
 
-	err = vp.storageClient.UploadFile(ctx, thumbnailPath, thumbnailFile, fileInfo.Size(), "image/jpeg")
+	err = vp.storageClient.UploadThumbnail(ctx, thumbnailFilename, thumbnailFile, fileInfo.Size(), "image/jpeg")
 	if err != nil {
 		return fmt.Errorf("failed to upload thumbnail: %w", err)
 	}

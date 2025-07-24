@@ -39,7 +39,7 @@ func main() {
 	defer redisClient.Close()
 
 	// Initialize MinIO
-	minioClient, err := storage.NewMinIOClient(cfg.MinIO)
+	minioClient, err := storage.NewMinIOClient(cfg.MinIO, log)
 	if err != nil {
 		log.Fatal("Failed to connect to MinIO", zap.Error(err))
 	}
