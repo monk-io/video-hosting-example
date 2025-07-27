@@ -353,6 +353,9 @@ minio:
       env: MINIO_CONSOLE_PORT
       description: Port for the MinIO web console.
       value: 9001
+  services:
+    api:
+      publish: true
 
 proxy:
   defines: runnable
@@ -391,7 +394,7 @@ frontend:
       type: string
       env: REACT_APP_MINIO_URL
       description: URL of the MinIO server for accessing video assets.
-      value: <- "https://" connection-domain-name("minio-api") concat-all
+      value: <- "https://" connection-domain-name("minio-api") ":9000" concat-all
     node-env:
       type: string
       env: NODE_ENV
