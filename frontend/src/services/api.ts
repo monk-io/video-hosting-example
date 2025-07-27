@@ -134,7 +134,7 @@ export class VideoAPI {
     // Use MinIO URL if available, otherwise use backend API
     const currentConfig = getConfig();
     const minioUrl = currentConfig.minioUrl || `${API_BASE_URL.replace(':8080', ':9000')}`;
-    return `${minioUrl}/videos/thumbnails/${thumbnailPath}`;
+    return `${minioUrl}/thumbnails/${thumbnailPath}`;
   }
 
   // Get thumbnail URL via backend API (fallback)
