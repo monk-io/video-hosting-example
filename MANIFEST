@@ -4,5 +4,5 @@ ENTRY youtube-example/stack
 IMAGE backend:latest backend backend Dockerfile
 IMAGE worker:latest worker worker Dockerfile
 SECRET default-netlify-pat default-redis-cloud-account-key default-redis-cloud-user-key default-redis-cloud-db-password
-#BLOBS frontend:frontend
+BLOBS frontend:frontend
 BLOBSIGNORE **/node_modules
