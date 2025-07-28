@@ -2,7 +2,7 @@ namespace: video-hosting-example
 
 frontend-site:
   defines: netlify/site
-  name: monk-video-hosting-example-dlu1
+  name: monk-video-hosting-example-dlu19
   force_ssl: false
   secret_ref: default-netlify-pat
   permitted-secrets:
@@ -412,7 +412,7 @@ proxy:
 
 frontend:
   defines: runnable
-  inherits: local/netlify/deploy
+  inherits: netlify/deploy
   containers:
     deploy:
       paths:
