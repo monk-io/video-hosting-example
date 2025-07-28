@@ -1,8 +1,8 @@
-REPO youtube-example
-LOAD youtube-example.yaml 
-ENTRY youtube-example/stack
+REPO video-hosting-example
+LOAD video-hosting-example.yaml
+ENTRY video-hosting-example/stack
 IMAGE backend:latest backend backend Dockerfile
 IMAGE worker:latest worker worker Dockerfile
-SECRET default-netlify-pat default-redis-cloud-account-key default-redis-cloud-user-key default-redis-cloud-db-password
+SECRET default-netlify-pat default-mongodb-org default-mongodb-token
 BLOBS frontend:frontend
 BLOBSIGNORE **/node_modules

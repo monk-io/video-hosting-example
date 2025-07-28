@@ -41,7 +41,9 @@ func main() {
 
 	log.Info("Starting video processing worker",
 		zap.String("worker_id", workerID),
-		zap.String("redis_uri", cfg.RedisURI))
+		zap.String("redis_uri", cfg.RedisURI),
+		zap.String("mongo_uri", cfg.MongoURI),
+	)
 
 	// Initialize Redis client
 	redisClient, err := queue.NewRedisClient(cfg.RedisURI)

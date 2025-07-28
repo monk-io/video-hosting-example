@@ -291,6 +291,71 @@ func (h *VideoHandler) ProcessVideo(c *gin.Context) {
 	})
 }
 
+// GetThumbnail serves video thumbnails from MinIO storage
+func (h *VideoHandler) GetThumbnail(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	videoID := c.Param("id")
+	if videoID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
+		return
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(videoID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
+		return
+	}
+
+	// Get video record to check if thumbnails exist
+	video, err := h.videoService.GetVideo(ctx, objectID)
+	if err != nil {
+		h.logger.Error("Failed to get video", zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "Video not found"})
+		return
+	}
+
+	// Check if video has thumbnails
+	if len(video.Thumbnails) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No thumbnail available for this video"})
+		return
+	}
+
+	// Use the first thumbnail (typically there's only one)
+	thumbnailFilename := video.Thumbnails[0]
+
+	// Download thumbnail from MinIO
+	thumbnailObject, err := h.minioClient.DownloadThumbnail(ctx, thumbnailFilename)
+	if err != nil {
+		h.logger.Error("Failed to download thumbnail",
+			zap.String("video_id", videoID),
+			zap.String("thumbnail", thumbnailFilename),
+			zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "Thumbnail not found in storage"})
+		return
+	}
+	defer thumbnailObject.Close()
+
+	// Set appropriate headers for image response
+	c.Header("Content-Type", "image/jpeg")
+	c.Header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
+	c.Header("Content-Disposition", "inline")
+
+	// Stream the thumbnail
+	_, err = io.Copy(c.Writer, thumbnailObject)
+	if err != nil {
+		h.logger.Error("Failed to stream thumbnail",
+			zap.String("video_id", videoID),
+			zap.Error(err))
+		return
+	}
+
+	h.logger.Debug("Served thumbnail",
+		zap.String("video_id", videoID),
+		zap.String("thumbnail", thumbnailFilename))
+}
+
 // convertToVideoResponse converts domain entity to API response
 func (h *VideoHandler) convertToVideoResponse(video *entities.Video) VideoResponse {
 	formats := make([]VideoFormatResponse, len(video.Formats))

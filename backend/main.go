@@ -27,6 +27,11 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
+	log.Info("Starting backend",
+		zap.String("redis_uri", cfg.RedisURI),
+		zap.String("mongo_uri", cfg.MongoURI),
+	)
+
 	// Initialize database
 	db, err := database.NewMongoDB(cfg.MongoURI)
 	if err != nil {

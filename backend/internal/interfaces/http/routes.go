@@ -52,6 +52,7 @@ func SetupRoutes(router *gin.Engine, db *database.MongoDB, redis *queue.RedisCli
 			videos.GET("", videoHandler.GetVideos)
 			videos.GET("/:id", videoHandler.GetVideo)
 			videos.GET("/:id/stream", videoHandler.StreamVideo)
+			videos.GET("/:id/thumbnail", videoHandler.GetThumbnail)
 			videos.POST("/:id/process", videoHandler.ProcessVideo)
 		}
 
