@@ -1,4 +1,4 @@
-import axios, { AxiosProgressEvent } from 'axios';
+import axios, { AxiosProgressEvent } from "axios";
 import {
   Video,
   VideoListResponse,
@@ -6,8 +6,8 @@ import {
   Job,
   JobsResponse,
   UploadProgress,
-  ApiError
-} from '../types/video';
+  ApiError,
+} from "../types/video";
 
 // Declare window.ENV type
 declare global {
@@ -22,37 +22,46 @@ declare global {
 // Get configuration from runtime config or environment variables
 const getConfig = () => {
   const runtimeConfig = window.ENV || {};
-  return {
-    apiUrl: runtimeConfig.REACT_APP_API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8080',
-    minioUrl: runtimeConfig.REACT_APP_MINIO_URL || process.env.REACT_APP_MINIO_URL || 'http://localhost:9000'
-  };
+  const isDev = process.env.NODE_ENV === "development";
+
+  // In development, prefer CRA proxy by using relative baseURL when no runtime config is injected
+  const apiUrl =
+    runtimeConfig.REACT_APP_API_URL ||
+    (isDev ? "" : process.env.REACT_APP_API_URL || "http://localhost:8080");
+
+  const minioUrl =
+    runtimeConfig.REACT_APP_MINIO_URL ||
+    process.env.REACT_APP_MINIO_URL ||
+    "http://localhost:9000";
+
+  return { apiUrl, minioUrl };
 };
 
 const config = getConfig();
 const API_BASE_URL = config.apiUrl;
 
-console.log('API Configuration:', {
+console.log("API Configuration:", {
   API_BASE_URL,
   MINIO_URL: config.minioUrl,
-  source: window.ENV ? 'runtime' : 'environment'
+  source: window.ENV
+    ? "runtime"
+    : process.env.NODE_ENV === "development"
+    ? "development-proxy"
+    : "environment",
 });
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
-    // Add auth token if available
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    // Token is dynamically attached by setAuthTokenGetter if configured
     return config;
   },
   (error) => Promise.reject(error)
@@ -63,7 +72,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const apiError: ApiError = {
-      error: error.response?.data?.error || error.message || 'Unknown error',
+      error: error.response?.data?.error || error.message || "Unknown error",
       message: error.response?.data?.message,
     };
     return Promise.reject(apiError);
@@ -71,9 +80,31 @@ api.interceptors.response.use(
 );
 
 export class VideoAPI {
+  // Allow integrating with Auth0 for token retrieval
+  private static getToken: (() => Promise<string | null>) | null = null;
+
+  static setAuthTokenGetter(getter: () => Promise<string | null>) {
+    this.getToken = getter;
+    // Attach a request interceptor once to fetch token before each request
+    api.interceptors.request.use(async (config) => {
+      if (this.getToken) {
+        try {
+          const token = await this.getToken();
+          if (token) {
+            config.headers = config.headers || {};
+            (config.headers as any).Authorization = `Bearer ${token}`;
+          }
+        } catch (_) {
+          // ignore token fetch errors
+        }
+      }
+      return config;
+    });
+  }
+
   // Health check
   static async checkHealth(): Promise<{ status: string; service: string }> {
-    const response = await api.get('/health');
+    const response = await api.get("/health");
     return response.data;
   }
 
@@ -82,25 +113,31 @@ export class VideoAPI {
     file: File,
     title: string,
     description: string,
-    uploadedBy: string = 'anonymous',
-    onProgress?: (progress: UploadProgress) => void
+    uploadedBy: string = "anonymous",
+    onProgress?: (progress: UploadProgress) => void,
+    uploaderName?: string,
+    uploaderAvatar?: string
   ): Promise<UploadResponse> {
     const formData = new FormData();
-    formData.append('video', file);
-    formData.append('title', title);
-    formData.append('description', description);
-    formData.append('uploaded_by', uploadedBy);
+    formData.append("video", file);
+    formData.append("title", title);
+    formData.append("description", description);
+    formData.append("uploaded_by", uploadedBy);
+    if (uploaderName) formData.append("uploader_name", uploaderName);
+    if (uploaderAvatar) formData.append("uploader_avatar", uploaderAvatar);
 
-    const response = await api.post('/api/v1/videos/upload', formData, {
+    const response = await api.post("/api/v1/videos/upload", formData, {
       headers: {
-        'Content-Type': 'multipart/form-data',
+        "Content-Type": "multipart/form-data",
       },
       onUploadProgress: (progressEvent: AxiosProgressEvent) => {
         if (onProgress && progressEvent.total) {
           const progress: UploadProgress = {
             loaded: progressEvent.loaded,
             total: progressEvent.total,
-            percentage: Math.round((progressEvent.loaded * 100) / progressEvent.total),
+            percentage: Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            ),
           };
           onProgress(progress);
         }
@@ -111,8 +148,11 @@ export class VideoAPI {
   }
 
   // Get videos list
-  static async getVideos(page: number = 1, limit: number = 20): Promise<VideoListResponse> {
-    const response = await api.get('/api/v1/videos', {
+  static async getVideos(
+    page: number = 1,
+    limit: number = 20
+  ): Promise<VideoListResponse> {
+    const response = await api.get("/api/v1/videos", {
       params: { page, limit },
     });
     return response.data;
@@ -125,7 +165,10 @@ export class VideoAPI {
   }
 
   // Get video stream URL
-  static getVideoStreamUrl(videoId: string, quality: string = 'original'): string {
+  static getVideoStreamUrl(
+    videoId: string,
+    quality: string = "original"
+  ): string {
     return `${API_BASE_URL}/api/v1/videos/${videoId}/stream?quality=${quality}`;
   }
 
@@ -133,7 +176,8 @@ export class VideoAPI {
   static getThumbnailUrl(thumbnailPath: string): string {
     // Use MinIO URL if available, otherwise use backend API
     const currentConfig = getConfig();
-    const minioUrl = currentConfig.minioUrl || `${API_BASE_URL.replace(':8080', ':9000')}`;
+    const minioUrl =
+      currentConfig.minioUrl || `${API_BASE_URL.replace(":8080", ":9000")}`;
     return `${minioUrl}/thumbnails/${thumbnailPath}`;
   }
 
@@ -143,7 +187,9 @@ export class VideoAPI {
   }
 
   // Trigger video processing
-  static async processVideo(videoId: string): Promise<{ message: string; video_id: string }> {
+  static async processVideo(
+    videoId: string
+  ): Promise<{ message: string; video_id: string }> {
     const response = await api.post(`/api/v1/videos/${videoId}/process`);
     return response.data;
   }
@@ -162,7 +208,7 @@ export class VideoAPI {
 
   // Get active jobs
   static async getActiveJobs(): Promise<JobsResponse> {
-    const response = await api.get('/api/v1/jobs/active');
+    const response = await api.get("/api/v1/jobs/active");
     return response.data;
   }
 
@@ -172,12 +218,63 @@ export class VideoAPI {
     page: number = 1,
     limit: number = 20
   ): Promise<VideoListResponse> {
-    const response = await api.get('/api/v1/videos', {
+    const response = await api.get("/api/v1/videos", {
       params: { q: query, page, limit },
+    });
+    return response.data;
+  }
+
+  // Comments API
+  static async listComments(
+    videoId: string,
+    page: number = 1,
+    limit: number = 20
+  ): Promise<{
+    comments: Array<{
+      id: string;
+      video_id: string;
+      author_id: string;
+      author_name?: string;
+      author_avatar?: string;
+      content: string;
+      status: string;
+      reason?: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+    page: number;
+    limit: number;
+  }> {
+    const response = await api.get(`/api/v1/videos/${videoId}/comments`, {
+      params: { page, limit },
+    });
+    return response.data;
+  }
+
+  static async createComment(
+    videoId: string,
+    content: string,
+    authorName?: string,
+    authorAvatar?: string
+  ): Promise<{
+    id: string;
+    video_id: string;
+    author_id: string;
+    author_name?: string;
+    author_avatar?: string;
+    content: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  }> {
+    const response = await api.post(`/api/v1/videos/${videoId}/comments`, {
+      content,
+      author_name: authorName,
+      author_avatar: authorAvatar,
     });
     return response.data;
   }
 }
 
 // Export default instance
-export default api; 
+export default api;

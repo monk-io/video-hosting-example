@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"youtube-backend/internal/domain/entities"
+	"youtube-backend/internal/domain/repositories"
 	"youtube-backend/internal/domain/services"
 	"youtube-backend/internal/infrastructure/storage"
+	mw "youtube-backend/internal/interfaces/middleware"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -20,6 +22,7 @@ import (
 type VideoHandler struct {
 	videoService *services.VideoService
 	minioClient  *storage.MinIOClient
+	userRepo     repositories.UserRepository
 	logger       *zap.Logger
 }
 
@@ -40,6 +43,8 @@ type VideoResponse struct {
 	Title            string                `json:"title"`
 	Description      string                `json:"description"`
 	UploadedBy       string                `json:"uploaded_by"`
+	UploaderName     string                `json:"uploader_name"`
+	UploaderAvatar   string                `json:"uploader_avatar"`
 	OriginalFilename string                `json:"original_filename"`
 	Duration         float64               `json:"duration"`
 	Size             int64                 `json:"size"`
@@ -56,10 +61,11 @@ type VideoFormatResponse struct {
 	Size     int64  `json:"size"`
 }
 
-func NewVideoHandler(videoService *services.VideoService, minioClient *storage.MinIOClient, logger *zap.Logger) *VideoHandler {
+func NewVideoHandler(videoService *services.VideoService, minioClient *storage.MinIOClient, userRepo repositories.UserRepository, logger *zap.Logger) *VideoHandler {
 	return &VideoHandler{
 		videoService: videoService,
 		minioClient:  minioClient,
+		userRepo:     userRepo,
 		logger:       logger,
 	}
 }
@@ -81,6 +87,19 @@ func (h *VideoHandler) UploadVideo(c *gin.Context) {
 	title := c.PostForm("title")
 	description := c.PostForm("description")
 	uploadedBy := c.PostForm("uploaded_by")
+	if sub := mw.GetAuthSubject(c); sub != "" {
+		uploadedBy = sub
+	}
+	uploaderName := mw.GetAuthName(c)
+	uploaderAvatar := mw.GetAuthPicture(c)
+	// Fallback to provided form fields (frontend may supply profile data)
+	if uploaderName == "" {
+		uploaderName = c.PostForm("uploader_name")
+	}
+	if uploaderAvatar == "" {
+		uploaderAvatar = c.PostForm("uploader_avatar")
+	}
+	uploaderOID := mw.GetAuthUserID(c)
 
 	if title == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Title is required"})
@@ -106,8 +125,8 @@ func (h *VideoHandler) UploadVideo(c *gin.Context) {
 		return
 	}
 
-	// Create video record
-	video, err := h.videoService.CreateVideo(ctx, title, description, uploadedBy, header.Filename, header.Size)
+	// Create video record (pass uploader OID as optional arg)
+	video, err := h.videoService.CreateVideo(ctx, title, description, uploadedBy, uploaderName, uploaderAvatar, header.Filename, header.Size, uploaderOID)
 	if err != nil {
 		h.logger.Error("Failed to create video record", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -367,11 +386,31 @@ func (h *VideoHandler) convertToVideoResponse(video *entities.Video) VideoRespon
 		}
 	}
 
+	// Hydrate uploader name/avatar for legacy records if missing
+	uploaderName := video.UploaderName
+	uploaderAvatar := video.UploaderAvatar
+	if uploaderName == "" {
+		if !video.UploaderUserID.IsZero() {
+			if u, err := h.userRepo.GetByID(context.Background(), video.UploaderUserID); err == nil && u != nil {
+				uploaderName = u.Name
+				uploaderAvatar = u.Avatar
+			}
+		}
+		if uploaderName == "" && video.UploadedBy != "" {
+			if u, err := h.userRepo.GetBySubject(context.Background(), video.UploadedBy); err == nil && u != nil {
+				uploaderName = u.Name
+				uploaderAvatar = u.Avatar
+			}
+		}
+	}
+
 	return VideoResponse{
 		ID:               video.ID.Hex(),
 		Title:            video.Title,
 		Description:      video.Description,
 		UploadedBy:       video.UploadedBy,
+		UploaderName:     uploaderName,
+		UploaderAvatar:   uploaderAvatar,
 		OriginalFilename: video.OriginalFilename,
 		Duration:         video.Duration,
 		Size:             video.Size,

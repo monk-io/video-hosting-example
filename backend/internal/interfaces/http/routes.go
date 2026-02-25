@@ -8,6 +8,7 @@ import (
 	"youtube-backend/internal/infrastructure/repositories"
 	"youtube-backend/internal/infrastructure/storage"
 	"youtube-backend/internal/interfaces/middleware"
+	"youtube-backend/pkg/config"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -18,10 +19,13 @@ func SetupRoutes(router *gin.Engine, db *database.MongoDB, redis *queue.RedisCli
 	router.Use(middleware.CORS())
 	router.Use(middleware.RequestLogger(logger))
 
+	// Load config for auth
+	cfg := config.Load()
+
 	// Initialize repositories
 	videoRepo := repositories.NewVideoRepository(db)
 	jobRepo := repositories.NewJobRepository(db)
-	// userRepo := repositories.NewUserRepository(db) // TODO: Implement user handlers
+	userRepo := repositories.NewUserRepository(db)
 
 	// Initialize job publisher
 	jobPublisher := queue.NewJobPublisher(redis)
@@ -29,10 +33,13 @@ func SetupRoutes(router *gin.Engine, db *database.MongoDB, redis *queue.RedisCli
 	// Initialize services
 	videoService := services.NewVideoService(videoRepo, jobRepo, jobPublisher)
 	processingService := services.NewProcessingService(jobRepo, videoRepo)
+	commentRepo := repositories.NewCommentRepository(db)
+	commentService := services.NewCommentService(commentRepo)
 
 	// Initialize handlers
-	videoHandler := handlers.NewVideoHandler(videoService, minio, logger)
+	videoHandler := handlers.NewVideoHandler(videoService, minio, userRepo, logger)
 	jobHandler := handlers.NewJobHandler(processingService, logger)
+	commentHandler := handlers.NewCommentHandler(commentService, jobPublisher, cfg.Moderation, logger)
 
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
@@ -48,7 +55,16 @@ func SetupRoutes(router *gin.Engine, db *database.MongoDB, redis *queue.RedisCli
 		// Video routes
 		videos := v1.Group("/videos")
 		{
-			videos.POST("/upload", videoHandler.UploadVideo)
+			// Protect upload with Auth0 middleware when configured
+			if cfg.Auth0.Domain != "" && cfg.Auth0.Audience != "" {
+				videos.POST("/upload",
+					middleware.Auth0Middleware(cfg.Auth0.Domain, cfg.Auth0.Audience),
+					middleware.SyncUserMiddleware(userRepo),
+					videoHandler.UploadVideo,
+				)
+			} else {
+				videos.POST("/upload", videoHandler.UploadVideo)
+			}
 			videos.GET("", videoHandler.GetVideos)
 			videos.GET("/:id", videoHandler.GetVideo)
 			videos.GET("/:id/stream", videoHandler.StreamVideo)
@@ -62,6 +78,23 @@ func SetupRoutes(router *gin.Engine, db *database.MongoDB, redis *queue.RedisCli
 			jobs.GET("/:id", jobHandler.GetJob)
 			jobs.GET("/video/:videoId", jobHandler.GetJobsByVideoID)
 			jobs.GET("/active", jobHandler.GetActiveJobs)
+		}
+
+		// Comment routes (attach under videos/:id to avoid wildcard conflicts)
+		comments := v1.Group("/videos/:id/comments")
+		{
+			// List is public, but includes pending for the author if authenticated
+			comments.GET("", commentHandler.List)
+			// Create requires auth
+			if cfg.Auth0.Domain != "" && cfg.Auth0.Audience != "" {
+				comments.POST("",
+					middleware.Auth0Middleware(cfg.Auth0.Domain, cfg.Auth0.Audience),
+					middleware.SyncUserMiddleware(userRepo),
+					commentHandler.Create,
+				)
+			} else {
+				comments.POST("", commentHandler.Create)
+			}
 		}
 
 		// User routes (basic implementation for future use)

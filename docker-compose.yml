@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # MongoDB Database
@@ -8,6 +8,13 @@ services:
     restart: unless-stopped
     ports:
       - "27017:27017"
+    command:
+      - "--quiet"
+      - "--logpath"
+      - "/proc/self/fd/1"
+      - "--logappend"
+      - "--setParameter"
+      - "logComponentVerbosity={verbosity:0, network:{verbosity:0}}"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
@@ -65,6 +72,9 @@ services:
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_USE_SSL=false
       - FRONTEND_URL=http://localhost:3000
+      - AUTH0_DOMAIN=monk-demo.us.auth0.com
+      - AUTH0_AUDIENCE=https://videotube
+
     depends_on:
       - mongodb
       - redis
@@ -84,8 +94,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - REACT_APP_API_URL=http://backend:8080
-      - REACT_APP_MINIO_URL=http://minio:9000
+      - REACT_APP_API_URL=http://localhost:8080
+      - REACT_APP_MINIO_URL=http://localhost:9000
     depends_on:
       - backend
     networks:
@@ -106,6 +116,10 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_USE_SSL=false
+      - LLM_ENABLED=true
+      - LLM_API_URL=https://isht3ln4axc6adr2jnxqql5i.agents.do-ai.run/
+      - LLM_API_TOKEN=OSJmqPNmx8m6BUOEdoheUc5to92Q2F_I
+      - LLM_MODEL=moderation
     depends_on:
       - mongodb
       - redis
@@ -130,6 +144,10 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_USE_SSL=false
+      - LLM_ENABLED=true
+      - LLM_API_URL=https://isht3ln4axc6adr2jnxqql5i.agents.do-ai.run/
+      - LLM_API_TOKEN=OSJmqPNmx8m6BUOEdoheUc5to92Q2F_I
+      - LLM_MODEL=moderation
     depends_on:
       - mongodb
       - redis
@@ -146,4 +164,4 @@ volumes:
 
 networks:
   youtube_network:
-    driver: bridge 
+    driver: bridge
